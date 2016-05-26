@@ -1,0 +1,22 @@
+{
+  "dev": {
+    "driver": "couchbase",
+    "user": "root",
+    "password": "root"
+  },
+  "test": {
+    "driver": "couchbase",
+    "user": "root",
+    "password": "root"
+  },
+  "prod": {
+    "driver": "couchbase",
+    "user": "root",
+    "password": "root"
+  },
+  "couchbase": {
+    "driver": "couchbase",
+    "database": "my_db",
+    "host": "localhost"
+  }
+}

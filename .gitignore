@@ -1,6 +1,9 @@
 # Mocha-circleci test reporter output 
 test-results.xml
 
+# babel artifacts, old js
+./dist/*
+
 # Visual studio config
 .vscode
 

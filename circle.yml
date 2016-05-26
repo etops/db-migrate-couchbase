@@ -1,0 +1,33 @@
+machine:
+    services:
+        - docker
+    node:
+        version: 5.5
+    pre:
+        - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
+        - sudo chmod 0755 /usr/bin/docker
+        - git config --global user.email "dev@etops.ch"
+        - git config --global user.name "devetops"
+    environment:
+        IMAGE_NAME: couchbase
+
+general:
+    build_dir: .
+
+dependencies:
+    pre:
+        - docker version
+        - docker info
+    override:
+        - docker info
+        - docker build -t $IMAGE_NAME:$CIRCLE_BUILD_NUM .
+
+test:
+    pre:
+        - docker run -d -p 8091:8091 $IMAGE_NAME:$CIRCLE_BUILD_NUM
+        - npm install
+        - npm install -g gulp
+        - curl --retry 20 --retry-delay 10 -v http://localhost:8091/index.html -C -
+    override:
+        - docker ps
+        - gulp test

@@ -1,133 +1,71 @@
 // Directions:
 // https://db-migrate.readthedocs.io/en/latest/Developers/contributing/#creating-your-own-driver
-import util from 'util';
-import moment from 'moment';
-import ottoman from 'ottoman';
+//
+// Couchbase driver docs:
+// http://docs.couchbase.com/sdk-api/couchbase-node-client-2.1.4/Cluster.html
+//
+// Conventions:
+// driver's noSQL API refers to "collections" which Couchbase doesn't have.  We
+// use buckets to be collections.
 import couchbase from 'couchbase';
 import Promise from 'bluebird';
 import Base from 'db-migrate-base';
+import bunyan from 'bunyan';
+import PrettyStream from 'bunyan-prettystream';
+
+const prettyStdOut = new PrettyStream();
+prettyStdOut.pipe(process.stdout);
 
 let type = null;
-let log = null;
+
+const log = bunyan.createLogger({
+  name: 'db-migrate-couchbase',
+  streams: [{
+    level: 'debug',
+    type: 'raw',
+    stream: prettyStdOut,
+  }],
+});
+
+let internalLogger = null;
 
 const DEFAULTS = {
-  host: 'localhost',
+  host: (process.env.DOCKER_IP || 'localhost'),
   port: 8091,
+  user: 'admin',
+  password: 'admin',
 };
 
 const CouchbaseDriver = Base.extend({
   init: function (connection, internals, config) {
+    log.info('init');
     this._super(internals);
     this.connection = connection;
     this.user = config.user;
     this.password = config.password;
     this.manager = connection.manager(connection, this.user, this.password);
+    this.active = null;
   },
 
   /**
-   * Creates the migrations collection
-   *
-   * @param callback
+   * Creates a bucket with a given name, and sets it to be active.
    */
-  _createMigrationsCollection: function (callback) {
-
+  createBucket: function (bucketName, options, callback) {
+    return this.manager.createBucket(bucketName, (options || {}), (err) => {
+      log.info('Created bucket', { bucketName, err });
+      this.active = this.connection.openBucket(bucketName);
+      return callback(err, this.active);
+    });
   },
 
   /**
-   * Creates the seed collection
-   *
-   * @param callback
+   * Drops a bucket.
    */
-  _createSeedsCollection: function (callback) {
-
-  },
-
-  /**
-   * An alias for _createMigrationsCollection
-   */
-  createMigrationsTable: function (callback) {
-    return this._createMigrationsCollection(callback);
-  },
-
-  /**
-   * An alias for _createSeederCollection
-   */
-  createSeedsTable: function (callback) {
-    return this._createSeedsCollection(callback);
-  },
-
-  /**
-   * Creates a collection
-   *
-   * @param collectionName  - The name of the collection to be created
-   * @param callback
-   */
-  createCollection: function (collectionName, callback) {
-
-  },
-
-  switchDatabase: function (options, callback) {
-
-  },
-
-  createDatabase: function (dbName, options, callback) {
-
-  },
-
-  dropDatabase: function (dbName, options, callback) {
-
-  },
-
-  /**
-   * An alias for createCollection
-   *
-   * @param collectionName  - The name of the collection to be created
-   * @param callback
-   */
-  createTable: function (collectionName, callback) {
-    return this.createCollection(collectionName, callback);
-  },
-
-  /**
-   * Drops a collection
-   *
-   * @param collectionName  - The name of the collection to be dropped
-   * @param callback
-   */
-  dropCollection: function (collectionName, callback) {
-
-  },
-
-  /**
-   * An alias for dropCollection
-   *
-   * @param collectionName  - The name of the collection to be dropped
-   * @param callback
-   */
-  dropTable: function (collectionName, callback) {
-    return this.dropCollection(collectionName, callback);
-  },
-
-  /**
-   * Renames a collection
-   *
-   * @param collectionName    - The name of the existing collection to be renamed
-   * @param newCollectionName - The new name of the collection
-   * @param callback
-   */
-  renameCollection: function (collectionName, newCollectionName, callback) {
-
-  },
-
-  /**
-   * An alias for renameCollection
-   *
-   * @param collectionName    - The name of the existing collection to be renamed
-   * @param newCollectionName - The new name of the collection
-   * @param callback
-   */
-  renameTable: function (collectionName, newCollectionName, callback) {
-    return this.renameCollection(collectionName, newCollectionName)
+  dropBucket: function (bucketName, callback) {
+    return this.manager.removeBucket(bucketName, (err) => {
+      log.info('Removed bucket', { bucketName, err });
+      return callback(err);
+    });
   },
 
   /**
@@ -138,8 +76,17 @@ const CouchbaseDriver = Base.extend({
    * @param columns         - The columns to add an index on
    * @param	unique          - A boolean whether this creates a unique index
    */
-  addIndex: function (collectionName, indexName, columns, unique, callback) {
+  addIndex: function (bucketName, indexName, columns, unique, callback) {
+    const cols = columns.map(c => `\`${c}\``).join(', ');
 
+    const n1ql = couchbase.N1qlQuery.fromString(`CREATE INDEX
+    ${indexName} on ${bucketName} ( ${cols} ) using GSI`);
+
+    const bucket = this.connection.openBucket(bucketName);
+    bucket.query(n1ql, (err, res) => {
+      console.log(`addIndex: ${err} res ${JSON.stringify(res)}`);
+      return callback(err, res);
+    });
   },
 
   /**
@@ -149,117 +96,57 @@ const CouchbaseDriver = Base.extend({
    * @param indexName       - The name of the index to remove
    * @param columns
    */
-  removeIndex: function (collectionName, indexName, callback) {
-
+  removeIndex: function (indexName, callback) {
+    log.info('Dropping index', { indexName });
+    return this.runN1ql(`DROP INDEX \`${this.active._name}\`.\`${indexName}\``, {}, callback);
   },
 
   /**
-   * Inserts a record(s) into a collection
-   *
-   * @param collectionName  - The collection to insert into
-   * @param toInsert        - The record(s) to insert
-   * @param callback
+   * Opens the specified bucket, sets it active, and returns it.
+   * @param bucketName the name of the bucket to use
+   * @returns self, for chaining
    */
-  insert: function (collectionName, toInsert, callback) {
+  withBucket: function (bucketName) {
+    let bucket = null;
 
+    const onBucketOpen = (err) => {
+      if (err) {
+        log.error('Failed to open bucket', { bucketName, err });
+      }
+    };
+
+    log.info('Opening bucket', { bucketName });
+    bucket = this.connection.openBucket(bucketName, onBucketOpen);
+    this.active = bucket;
+    return this;
+  },
+
+  runN1ql: function (query, params, callback) {
+    const n1ql = couchbase.N1qlQuery.fromString(query);
+
+    if (!this.active) {
+      return callback('No active bucket');
+    }
+
+    return this.active.query(n1ql, params, (err, rows, meta) => {
+      console.log(`QUERY RESULTS: ${JSON.stringify(rows)} META ${JSON.stringify(meta)}`);
+      return callback(err, rows, meta);
+    });
+  },
+
+  getBucketNames: function (callback) {
+    log.info('Getting bucket names');
+    return this.connection.listBuckets(callback);
   },
 
   /**
-   * Inserts a migration record into the migration collection
-   *
-   * @param name                - The name of the migration being run
-   * @param callback
-   */
-  addMigrationRecord: function (name, callback) {
-
-  },
-
-  /**
-   * Inserts a seeder record into the seeder collection
-   *
-   * @param name                - The name of the seed being run
-   * @param callback
-   */
-  addSeedRecord: function (name, callback) {
-
-  },
-
-  /**
-   * Runs a query
-   *
-   * @param collectionName  - The collection to query on
-   * @param query           - The query to run
-   * @param callback
-   */
-  _find: function (collectionName, query, callback) {
-
-  },
-
-  /**
-   * Gets all the collection names in couchbase.
-   *
-   * @param callback  - The callback to call with the collection names
-   */
-  _getCollectionNames: function (callback) {
-
-  },
-
-  /**
-   * Gets all the indexes for a specific collection
-   *
-   * @param collectionName  - The name of the collection to get the indexes for
-   * @param callback        - The callback to call with the collection names
-   */
-  _getIndexes: function (collectionName, callback) {
-  },
-
-  _makeParamArgs: function (args) {
-
-  },
-
-  /**
-   * Runs a NoSQL command regardless of the dry-run param
-   */
-  _all: function () {
-
-  },
-
-  /**
-   * Queries the migrations collection
+   * Gets all the indexes for the active bucket.
    *
    * @param callback
    */
-  allLoadedMigrations: function (callback) {
-
-  },
-
-  /**
-   * Queries the seed collection
-   *
-   * @param callback
-   */
-  allLoadedSeeds: function (callback) {
-
-  },
-
-  /**
-   * Deletes a migration
-   *
-   * @param migrationName       - The name of the migration to be deleted
-   * @param callback
-   */
-  deleteMigration: function (migrationName, callback) {
-
-  },
-
-  /**
-   * Deletes a migration
-   *
-   * @param migrationName       - The name of the migration to be deleted
-   * @param callback
-   */
-  deleteSeed: function (migrationName, callback) {
-
+  getIndexes: function (collectionName, callback) {
+    log.info('Getting indexes');
+    return this.runN1ql('SELECT * FROM system:indexes', {}, callback);
   },
 });
 
@@ -275,8 +162,10 @@ const connect = (config, intern, callback) => {
   let port;
   let host;
 
-  log = intern.mod.log;
+  internalLogger = intern.mod.log;
   type = intern.mod.type;
+
+  log.info('Connect', { config, intern });
 
   // Make sure the database is defined
   if (config.database === undefined) {
