@@ -1,22 +1,18 @@
 {
+  "defaultEnv": "dev",
   "dev": {
     "driver": "couchbase",
-    "user": "root",
-    "password": "root"
-  },
-  "test": {
-    "driver": "couchbase",
-    "user": "root",
-    "password": "root"
-  },
-  "prod": {
-    "driver": "couchbase",
-    "user": "root",
-    "password": "root"
+    "user": "admin",
+    "password": "admin001*",
+    "bucket": "default",
+    "database": "default",
+    "migrationBucket": "default"
   },
   "couchbase": {
     "driver": "couchbase",
-    "database": "my_db",
-    "host": "localhost"
+    "database": "default",
+    "bucket": "default",
+    "migrationBucket": "default",
+    "host": "couchbase://localhost"
   }
 }

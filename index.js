@@ -7,16 +7,30 @@
 // Conventions:
 // driver's noSQL API refers to "collections" which Couchbase doesn't have.  We
 // use buckets to be collections.
+// RDBMS "Tables" are Ottoman models.
+// RDBMS "Rows" are ottoman model instances (documents)
+// RDBMS "Columns" are paths into an ottoman model.  Not just attributes, but paths.
+// RDBMS "Databases" are Couchbase buckets.
 import couchbase from 'couchbase';
 import Promise from 'bluebird';
 import Base from 'db-migrate-base';
 import bunyan from 'bunyan';
 import PrettyStream from 'bunyan-prettystream';
+const ottoman = require('ottoman');
+import moment from 'moment';
+import _ from 'lodash';
+import deasync from 'deasync';
 
 const prettyStdOut = new PrettyStream();
 prettyStdOut.pipe(process.stdout);
 
+/**
+ * contains the standard datatypes of db-migrate
+ */
 let type = null;
+
+const UNSUPPORTED = 'operation not supported';
+const ottomanType = '_type';
 
 const log = bunyan.createLogger({
   name: 'db-migrate-couchbase',
@@ -30,63 +44,450 @@ const log = bunyan.createLogger({
 let internalLogger = null;
 
 const DEFAULTS = {
-  host: (process.env.DOCKER_IP || 'localhost'),
+  host: (process.env.COUCHBASE_HOST || 'couchbase://localhost'),
   port: 8091,
   user: 'admin',
-  password: 'admin',
+  password: 'admin001*',
 };
+
+let singleton = null;
 
 const CouchbaseDriver = Base.extend({
   init: function (connection, internals, config) {
+    if (singleton) {
+      log.warning('You should only create one instance of the db-migrate-couchbase driver');
+      return singleton;
+    }
+
     log.info('init');
     this._super(internals);
     this.connection = connection;
     this.user = config.user;
     this.password = config.password;
-    this.manager = connection.manager(connection, this.user, this.password);
-    this.active = null;
+    this.manager = connection.manager(this.user, this.password);
+    this.models = {};
+
+    if (!config.migrationBucket) {
+      throw new Error('Configuration must specify migrationBucket');
+    }
+
+    this.migrationBucket = this.connection.openBucket(config.migrationBucket, (err) => {
+      if (err) {
+        throw new Error(`Could not open migration bucket: ${err}`, err);
+      }
+    });
+
+    this.active = this.migrationBucket;
+    ottoman.bucket = this.migrationBucket;
+    this.migrationAdapter = new ottoman.StoreAdapter.Couchbase(this.migrationBucket);
+
+    // Property names are obligatory here; the migrate framework expects exactly these,
+    // "name" and "run_on"
+    this.MigrationRun = ottoman.model('MigrationRun', {
+      oid: { type: 'string', auto: 'uuid', readonly: true },
+      name: { type: 'string' },
+      run_on: { type: 'Date' },
+    },
+      {
+        id: 'oid',
+        // store: this.migrationAdapter,
+      });
+
+    this.ready = false;
+
+    ottoman.ensureIndices(err => {
+      if (err) {
+        log.error('Failed to create ottoman indices', { err });
+      }
+
+      this.ready = true;
+    });
+
+    this.models.MigrationRun = this.MigrationRun;
+
+    singleton = this;
+
+    return singleton;
+  },
+
+  activeBucketName: function () {
+    return singleton.active._name;
+  },
+
+  runN1ql: function (query, params, callback) {
+    const n1ql = couchbase.N1qlQuery.fromString(query);
+
+    // Use strong consistency on all migration queries, to avoid errors or missing records
+    // owing from cluster synchronization.
+    n1ql.consistency(couchbase.N1qlQuery.Consistency.STATEMENT_PLUS);
+
+    if (!singleton.active) {
+      return Promise.reject('no active bucket').nodeify(callback);
+    }
+
+    if (singleton.internals.dryRun) {
+      log.info('runN1ql dry run', { query, params });
+      return Promise.resolve(true).nodeify(callback);
+    }
+
+    return new Promise((resolve, reject) => {
+      log.info(query);
+      return singleton.active.query(n1ql, params, (err, rows, meta) => {
+        if (err) {
+          log.error('n1ql error', { err });
+          return reject(err);
+        }
+
+        return resolve({ rows, meta });
+      });
+    }).nodeify(callback);
+  },
+
+  close: function (callback) {
+    log.info('close');
+
+    // Couchbase doesn't disconnect nicely, leaves open threads.
+    setTimeout(() => {
+      log.info('Time!');
+      process.exit(0);
+    }, 5000);
+
+    callback();
+  },
+
+  /**
+   * Provided for compatibility with the driver, but this is an alias for runN1ql
+   */
+  runSql: function (query, params, callback) {
+    log.info('runSql', { query, params });
+    return singleton.runN1ql(query, params, callback);
+  },
+
+  /**
+   * Provided for compatibility with the driver, but this is an alias for runN1ql
+   */
+  all: function (query, params, callback) {
+    log.info('all', { query, params });
+    return singleton.runN1ql(query, params, callback);
+  },
+
+  /**
+   * Queries the migrations table
+   *
+   * @param callback
+   */
+  allLoadedMigrations: function (callback) {
+    log.info('allLoadedMigrations');
+
+    return new Promise((resolve, reject) => {
+      singleton.getModel('MigrationRun').find({},
+        {
+          sort: ['run_on', 'name'],
+          consistency: ottoman.Consistency.GLOBAL,
+        },
+        (err, models) => {
+          if (err) { return reject(err); }
+          return resolve(models);
+        });
+    }).nodeify(callback);
+  },
+
+  /**
+   * Deletes a migration
+   *
+   * @param migrationName   - The name of the migration to be deleted
+   * @param callback
+   */
+  deleteMigration: function (migrationName, callback) {
+    log.info('deleteMigration', { migrationName });
+    return new Promise((resolve, reject) => {
+      singleton.MigrationRun.find({
+        name: migrationName,
+      }, {}, (err, rows) => {
+        if (err) { return reject(err); }
+
+        if (rows.length === 0) {
+          return resolve(false);
+        }
+
+        const deletePromises = rows.map(migRecord => new Promise((delResolve, delReject) => {
+          log.info('Deleting migration record ', { migRecord });
+          return migRecord.remove(removeErr => {
+            if (removeErr) { return delReject(removeErr); }
+            return delResolve(true);
+          });
+        }));
+
+        return Promise.all(deletePromises).then(r => resolve(r));
+      });
+    }).nodeify(callback);
+  },
+
+  mapDataType: function (spec) {
+    const map = {};
+
+    const ottomanTypes = ['string', 'integer', 'Date', 'number', 'boolean', 'Mixed'];
+
+    // Already an ottoman type?
+    if (ottomanTypes.indexOf(spec.type) !== -1) {
+      return spec.type;
+    }
+
+    map[type.TEXT] = map[type.CHAR] = map[type.STRING] = 'string';
+    map[type.INTEGER] = map[type.SMALLINT] = 'integer';
+    map[type.BIGINT] = 'string';
+    map[type.REAL] = map[type.DECIMAL] = map[type.REAL] = 'number';
+    map[type.BOOLEAN] = 'boolean';
+    map[type.DATE] = map[type.DATE_TIME] = 'Date';
+    map[type.BLOB] = 'string';
+    map[type.TIME] = 'string';
+    map[type.BINARY] = 'string';
+
+    if (spec.type in map) {
+      return map[spec.type];
+    }
+
+    return 'string';
+  },
+
+  /**
+   * Unsupported; if Couchbase supported transactions, here's where
+   * START TRANSACTION would go.
+   */
+  startMigration: function (cb) {
+    log.info('startMigration');
+    return Promise.resolve(true).nodeify(cb);
+  },
+
+  /**
+   * Unsupported; if Couchbase supported transactions, here's where
+   * COMMIT would go.
+   */
+  endMigration: function (cb) {
+    log.info('endMigration');
+    return Promise.resolve(true).nodeify(cb);
+  },
+
+  /**
+   * Remembers a model for later reference.
+   * @param modelName name of the model
+   * @param ottomanModel the actual model
+   * @returns the driver instance for chaining.
+   */
+  registerModel: function (modelName, ottomanModel) {
+    singleton.models[modelName] = ottomanModel;
+    return singleton;
+  },
+
+  /**
+   * Return a model that this migration driver knows about
+   * @param modelName the name of the model.
+   */
+  getModel: function (modelName) {
+    return singleton.models[modelName];
+  },
+
+  /**
+   * Create table: just an alias for making an ottoman model
+   */
+  createTable: function (ottomanModelName, schema, callback) {
+    if (ottomanModelName === 'migration') {
+      return Promise.resolve(singleton.MigrationRun).nodeify(callback);
+    }
+
+    log.info('create table / ottoman model', { ottomanModelName, schema });
+
+    // This is a special case, we store migrations under ottoman model MigrationRun.
+    // Also, createTable when migration starts creates a table with a field called 'id',
+    // which isn't permitted in ottoman.
+    if (ottomanModelName === 'migrations') {
+      return Promise.resolve(this.MigrationRun).nodeify(callback);
+    }
+
+    const model = ottoman.model(ottomanModelName, schema);
+    singleton.registerModel(ottomanModelName, model);
+
+    return Promise.resolve(singleton.getModel(ottomanModelName)).nodeify(callback);
+  },
+
+  /**
+   * Create an ottoman model; alias for createTable
+   */
+  createOttomanModel: function (ottomanModelName, options, callback) {
+    return singleton.createTable(ottomanModelName, options, callback);
+  },
+
+  /** unsupported */
+  dropTable: function (tableName, options, callback) {
+    log.info('dropTable', { tableName, options });
+    return Promise.reject(UNSUPPORTED).nodeify(callback);
+  },
+
+  dropOttomanModel: function (ottomanModelName, options, callback) {
+    return singleton.dropTable(ottomanModelName, options, callback);
+  },
+
+  /**
+   * Unsupported; renaming a model is easy, but carrying with it and pruning its indexes is hard.
+   */
+  renameTable: function (ottomanModelName, newOttomanModelName, callback) {
+    log.info('renameTable', { ottomanModelName, newOttomanModelName });
+    return Promise.reject(UNSUPPORTED).nodeify(callback);
+  },
+
+  renameOttomanModel: function (ottomanModelName, newOttomanModelName, callback) {
+    return singleton.renameTable(ottomanModelName, newOttomanModelName, callback);
+  },
+
+  addColumn: function (ottomanModelName, modelPath, pathSpec, callback) {
+    log.info('addColumn', { ottomanModelName, modelPath, pathSpec });
+
+    // TODO -- default value of null won't work for all ottoman types, like
+    // Mixed, ref, etc.   But it will work for almost all primitive types.
+    // const ottomanType = this.mapDataType(pathSpec);
+
+    const q = `
+      UPDATE \`${singleton.active._name}\`
+      SET \`${modelPath}\` = null
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
+
+    return singleton.runN1ql(q, {}, callback);
+  },
+
+  addOttomanPath: function (ottomanModelName, modelPath, pathSpec, callback) {
+    return singleton.addColumn(ottomanModelName, modelPath, pathSpec, callback);
+  },
+
+  removeColumn: function (ottomanModelName, modelPath, callback) {
+    log.info('removeColumn', { ottomanModelName, modelPath });
+
+    const q = `
+      UPDATE \`${singleton.active._name}\`
+      UNSET \`${modelPath}\`
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
+
+    return singleton.runN1ql(q, {}, callback);
+  },
+
+  removeOttomanPath: function (ottomanModelName, modelPath, callback) {
+    return singleton.removeColumn(ottomanModelName, modelPath, callback);
+  },
+
+  /**
+   * alias
+   * @see renameOttomanPath
+   */
+  renameColumn: function (ottomanModelName, oldModelPath, newModelPath, callback) {
+    log.info('renameColumn', { ottomanModelName, oldModelPath, newModelPath });
+
+    const q = `
+      UPDATE \`${singleton.active._name}\`
+      SET \`${newModelPath}\` = \`${oldModelPath}\`
+      UNSET \`${oldModelPath}\`
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
+
+    log.info('renameColumn', { q });
+    return singleton.runN1ql(q, {}, callback);
+  },
+
+  /**
+   * Use this function with care, it does **not** adjust any indexes that might already be
+   * on the path, so consider dropping those before doing this.
+   */
+  renameOttomanPath: function (ottomanModelName, oldModelPath, newModelPath, callback) {
+    return singleton.renameColumn(ottomanModelName, oldModelPath, newModelPath, callback);
+  },
+
+  changeColumn: function (ottomanModelName, ottomanPathName, pathSpec, callback) {
+    log.info('changeColumn', { ottomanModelName, ottomanPathName, pathSpec });
+    return Promise.reject(UNSUPPORTED).nodeify(callback);
+  },
+
+  /**
+   * Couchbase doesn't support this as such, because the concepts of columnNameArrays
+   * and valueArrays aren't really a good fit.
+   */
+  insert: function (tableName, columnNameArray, valueArray, callback) {
+    log.info('insert', { tableName, columnNameArray, valueArray });
+    return Promise.reject(UNSUPPORTED).nodeify(callback);
+  },
+
+  addMigrationRecord: function (name, callback) {
+    log.info('addMigrationRecord', { name });
+    const i = new singleton.MigrationRun({
+      name,
+      run_on: moment().utc(),
+    });
+
+    return new Promise((resolve, reject) => i.save(err => {
+      if (err) { return reject(err); }
+      return resolve(true);
+    })).nodeify(callback);
   },
 
   /**
    * Creates a bucket with a given name, and sets it to be active.
    */
   createBucket: function (bucketName, options, callback) {
-    return this.manager.createBucket(bucketName, (options || {}), (err) => {
-      log.info('Created bucket', { bucketName, err });
-      this.active = this.connection.openBucket(bucketName);
-      return callback(err, this.active);
-    });
+    log.info('createBucket', { bucketName });
+
+    return new Promise((resolve, reject) => {
+      return singleton.manager.createBucket(bucketName, (options || {}), err => {
+        if (err) { return reject(err); }
+        log.info('Created bucket', { bucketName, err });
+        singleton.active = singleton.connection.openBucket(bucketName);
+        return resolve(singleton.active);
+      });
+    }).nodeify(callback);
   },
 
   /**
-   * Drops a bucket.
+   * Drops a bucket.   Note, due to couchbase server implementation and what it
+   * takes to drop a bucket, this may take quite some time to resolve (> 1 min, even in
+   * small cases).   Do not use this unless you know what you're doing, as this function
+   * can destroy quite a lot very quickly.
    */
   dropBucket: function (bucketName, callback) {
-    return this.manager.removeBucket(bucketName, (err) => {
-      log.info('Removed bucket', { bucketName, err });
-      return callback(err);
-    });
+    log.info('dropBucket', { bucketName });
+
+    return new Promise((resolve, reject) => singleton.manager.removeBucket(bucketName, (err) => {
+      if (err) { return reject(err); }
+
+      // Remove active if we just remove that one, because it's a reference that's
+      // no longer valid.
+      if (singleton.active._name === bucketName) {
+        singleton.active = null;
+      }
+
+      return resolve(true);
+    })).nodeify(callback);
   },
 
   /**
    * Adds an index to a collection
-   *
-   * @param collectionName  - The collection to add the index to
-   * @param indexName       - The name of the index to add
-   * @param columns         - The columns to add an index on
-   * @param	unique          - A boolean whether this creates a unique index
+   * @param ottomanModelName the name of the ottoman model
+   * @param indexName - The name of the index to add
+   * @param columns - The columns to add an index on
+   * @param callback
    */
-  addIndex: function (bucketName, indexName, columns, unique, callback) {
-    const cols = columns.map(c => `\`${c}\``).join(', ');
+  addIndex: function (ottomanModelName, indexName, columns, callback) {
+    log.info('Add Index', { indexName, columns, ottomanModelName });
 
-    const n1ql = couchbase.N1qlQuery.fromString(`CREATE INDEX
-    ${indexName} on ${bucketName} ( ${cols} ) using GSI`);
+    let srcCols = columns;
 
-    const bucket = this.connection.openBucket(bucketName);
-    bucket.query(n1ql, (err, res) => {
-      console.log(`addIndex: ${err} res ${JSON.stringify(res)}`);
-      return callback(err, res);
-    });
+    if (typeof columns === 'string') {
+      srcCols = [columns];
+    }
+
+    const cols = srcCols.map(c => `\`${c}\``).join(', ');
+
+    const n1ql = `
+      CREATE INDEX \`${indexName}\` ON \`${singleton.active._name}\` (
+        ${cols}
+      )
+      WHERE \`${ottomanType}\`='${ottomanModelName}'`;
+
+    return singleton.runN1ql(n1ql, {}, callback);
   },
 
   /**
@@ -97,8 +498,8 @@ const CouchbaseDriver = Base.extend({
    * @param columns
    */
   removeIndex: function (indexName, callback) {
-    log.info('Dropping index', { indexName });
-    return this.runN1ql(`DROP INDEX \`${this.active._name}\`.\`${indexName}\``, {}, callback);
+    log.info('removeIndex', { indexName });
+    return singleton.runN1ql(`DROP INDEX \`${singleton.active._name}\`.\`${indexName}\``, {}, callback);
   },
 
   /**
@@ -109,34 +510,31 @@ const CouchbaseDriver = Base.extend({
   withBucket: function (bucketName) {
     let bucket = null;
 
-    const onBucketOpen = (err) => {
-      if (err) {
-        log.error('Failed to open bucket', { bucketName, err });
-      }
-    };
+    return new Promise((resolve, reject) => {
+      const onBucketOpen = (err) => {
+        if (err) {
+          log.error('Failed to open bucket', { bucketName, err });
+          return reject(err);
+        }
 
-    log.info('Opening bucket', { bucketName });
-    bucket = this.connection.openBucket(bucketName, onBucketOpen);
-    this.active = bucket;
-    return this;
-  },
+        singleton.active = bucket;
+        return resolve(singleton);
+      };
 
-  runN1ql: function (query, params, callback) {
-    const n1ql = couchbase.N1qlQuery.fromString(query);
-
-    if (!this.active) {
-      return callback('No active bucket');
-    }
-
-    return this.active.query(n1ql, params, (err, rows, meta) => {
-      console.log(`QUERY RESULTS: ${JSON.stringify(rows)} META ${JSON.stringify(meta)}`);
-      return callback(err, rows, meta);
+      log.info('Opening active bucket', { bucketName });
+      bucket = singleton.connection.openBucket(bucketName, onBucketOpen);
     });
   },
 
   getBucketNames: function (callback) {
-    log.info('Getting bucket names');
-    return this.connection.listBuckets(callback);
+    log.info('getBucketNames');
+
+    return new Promise((resolve, reject) => singleton.manager.listBuckets((err, buckets) => {
+      if (err) { return reject(err); }
+
+      // log.info('Buckets', { buckets });
+      return resolve(buckets);
+    })).nodeify(callback);
   },
 
   /**
@@ -144,9 +542,9 @@ const CouchbaseDriver = Base.extend({
    *
    * @param callback
    */
-  getIndexes: function (collectionName, callback) {
+  getIndexes: function (callback) {
     log.info('Getting indexes');
-    return this.runN1ql('SELECT * FROM system:indexes', {}, callback);
+    return singleton.runN1ql('SELECT * FROM system:indexes', {}, callback);
   },
 });
 
@@ -159,33 +557,60 @@ Promise.promisifyAll(CouchbaseDriver);
  * @param callback  - The callback to call with a CouchbaseDriver object
  */
 const connect = (config, intern, callback) => {
-  let port;
-  let host;
-
-  internalLogger = intern.mod.log;
+  internalLogger = (intern.mod.log || log);
   type = intern.mod.type;
 
-  log.info('Connect', { config, intern });
+  // log.info('Connect', { config, intern, type });
 
-  // Make sure the database is defined
-  if (config.database === undefined) {
-    throw new Error('database must be defined in database.json');
-  }
-
+  let port;
   if (config.port === undefined) {
     port = DEFAULTS.port;
   } else {
     port = config.port;
   }
 
+  /* Export functions to the interface that are not normally part
+   * of the migration interface.
+   */
+  const exportable = [
+    'runN1ql', 'registerModel', 'getModel', 'createOttomanModel',
+    'renameOttomanModel', 'addOttomanPath', 'removeOttomanPath',
+    'renameOttomanPath', 'createBucket', 'dropBucket',
+    'withBucket', 'getBucketNames', 'getIndexes',
+  ];
+
+  exportable.forEach(f => {
+    /* eslint no-param-reassign: "off" */
+    if (intern.interfaces && intern.interfaces.MigratorInterface) {
+      intern.interfaces.MigratorInterface[f] = function (...args) {
+        return Promise.reject('Not implemented')
+          .nodeify(args[args.length - 1]);
+      };
+    }
+    return f;
+  });
+
+  let cluster = null;
+
   if (config.host === undefined) {
-    host = `${DEFAULTS.host}:${port}`;
+    cluster = `${DEFAULTS.host}:${port}?detailed_errcodes=1`;
   } else {
-    host = `${config.host}:${port}`;
+    cluster = `${config.host}:${port}?detailed_errcodes=1`;
   }
 
-  const db = config.db || new couchbase.Cluster(host);
-  callback(null, new CouchbaseDriver(db, intern, config));
+  log.info('Connecting to cluster', { cluster });
+  const db = new couchbase.Cluster(cluster);
+
+  const driver = new CouchbaseDriver(db, intern, config);
+
+  deasync.loopWhile(() => !driver.ready);
+
+  if (config.bucket) {
+    return driver.withBucket(config.bucket)
+      .then(d => callback(null, d));
+  }
+
+  return callback(null, new CouchbaseDriver(db, intern, config));
 };
 
-export default { connect };
+module.exports = { connect };
