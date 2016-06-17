@@ -1,6 +1,8 @@
 # Mocha-circleci test reporter output 
 test-results.xml
 
+dist
+
 # babel artifacts, old js
 ./dist/*
 

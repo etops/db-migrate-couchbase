@@ -3,7 +3,7 @@ FROM couchbase/server:community-4.0.0
 MAINTAINER moxious
 
 ENV ADMIN_LOGIN=admin \
-    ADMIN_PASSWORD=admin
+    ADMIN_PASSWORD=admin001*
 
 COPY init.sh /
 RUN chmod +x /init.sh

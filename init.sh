@@ -10,6 +10,8 @@ wait_for_start() {
     done
 }
 
+CLUSTER_RAM_QUOTA=1024
+
 # if this node should reach an existing server (a couchbase link is defined)  => env is set by docker compose link
 if [ -n "${COUCHBASE_NAME:+1}" ]; then
 
@@ -46,22 +48,24 @@ else
 
     echo "start initial cluster configuration"
     # init the cluster
-    couchbase-cli cluster-init -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD --cluster-init-username=${ADMIN_LOGIN} --cluster-init-password=${ADMIN_PASSWORD} --cluster-init-port=8091 --cluster-init-ramsize=${CLUSTER_RAM_QUOTA} --services=data,index,query
+    couchbase-cli cluster-init -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD \
+       --cluster-init-username=${ADMIN_LOGIN} \
+       --cluster-init-password=${ADMIN_PASSWORD} \
+       --cluster-init-port=8091 \
+       --cluster-init-ramsize=${CLUSTER_RAM_QUOTA} \
+       --services=data,index,query
 
-    # create bucket data
-    couchbase-cli bucket-create -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD --bucket=default --bucket-type=couchbase --bucket-ramsize=256 --wait --services=data,index,query
+    # create bucket default
+    couchbase-cli bucket-create -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD \
+       --bucket=default \
+       --bucket-type=couchbase \
+       --bucket-ramsize=640 \
+       --wait
 
-    #create bucket cache
-#as yet is unused and couchbase may come up and be ready faster without this
-#    couchbase-cli bucket-create -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD --bucket=cache --bucket-type=memcached --bucket-ramsize=256 --wait --services=data,index,query
+    echo "Inspecting bucket list..."
+    couchbase-cli bucket-list -c localhost:8091 \
+        -u $ADMIN_LOGIN -p $ADMIN_PASSWORD
 
-
-    # Rebalancing could also be done here, but then a killed container doesn't rebalance automatically
-    # wait for other node to connect to the cluster
-    #sleep 10
-
-    # rebalance
-    # couchbase-cli rebalance -c 127.0.0.1 -u $ADMIN_LOGIN -p $ADMIN_PASSWORD
 fi
 
 wait

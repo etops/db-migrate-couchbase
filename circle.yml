@@ -10,6 +10,7 @@ machine:
         - git config --global user.name "devetops"
     environment:
         IMAGE_NAME: couchbase
+        COUCHBASE_HOST: localhost
 
 general:
     build_dir: .
@@ -24,10 +25,22 @@ dependencies:
 
 test:
     pre:
-        - docker run -d -p 8091:8091 $IMAGE_NAME:$CIRCLE_BUILD_NUM
         - npm install
-        - npm install -g gulp
+        - npm install -g gulp babel babel-cli
+        - docker run -d --name couchtest -p 8091:8091 -p 8092:8092 -p 8093:8093 -p 11210:11210 $IMAGE_NAME:$CIRCLE_BUILD_NUM
+        - sleep 10
+        # Verify docker container is running.
         - curl --retry 20 --retry-delay 10 -v http://localhost:8091/index.html -C -
+        # Install driver into its own node_modules, so that db-migrate can see this plugin.
+        - gulp compile
+        - sh install-yourself.sh
+        - ls -l node_modules/db-migrate-couchbase/*
+        - cat database.json
+        # Bring DB to state 1.
+        - babel-node ./create-db-state-1.js
+        - ./node_modules/db-migrate/bin/db-migrate up
+        - ./node_modules/db-migrate/bin/db-migrate down
+    post:
+        - docker logs --tail=200 couchtest 2>&1 | tee $CIRCLE_ARTIFACTS/docker.log
     override:
-        - docker ps
         - gulp test

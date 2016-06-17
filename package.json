@@ -10,8 +10,8 @@
     "type": "git",
     "url": "https://github.com/etops/db-migrate-couchbase"
   },
-  "author": "Etops AG",
-  "license": "UNLICENSED",
+  "author": "David Allen <d.allen@etops.ch>",
+  "license": "MIT",
   "dependencies": {
     "babel": "^6.5.2",
     "babel-cli": "^6.9.0",
@@ -33,10 +33,12 @@
     "gulp-inject-modules": "^1.0.0",
     "gulp-istanbul": "^0.10.4",
     "gulp-mocha": "^2.2.0",
+    "lodash": "^4.13.1",
     "mocha": "^2.5.3",
     "mocha-circleci-reporter": "0.0.1",
     "moment": "^2.13.0",
-    "ottoman": "^1.0.3",
+    "ottoman": "1.0.3",
+    "randomstring": "^1.1.5",
     "uuid": "^2.0.2"
   },
   "devDependencies": {
