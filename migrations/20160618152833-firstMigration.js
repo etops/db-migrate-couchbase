@@ -22,10 +22,10 @@ exports.up = function (db) {
 
   return db
     .addColumn('Test', 'newAttribute', { type: 'string' })
-    .then(db.runSql('UPDATE default SET newAttribute=\'FOO\' WHERE _type=\'Test\''))
-    .then(db.renameColumn('Test', 'renameMe', 'renamedColumn'))
-    .then(db.removeColumn('Test', 'removeMe'))
-    .then(console.log('FIRST MIGRATE: UP (done)'));
+    .then(() => db.runSql('UPDATE default SET newAttribute=\'FOO\' WHERE _type=\'Test\''))
+    .then(() => db.renameColumn('Test', 'renameMe', 'renamedColumn'))
+    .then(() => db.removeColumn('Test', 'removeMe'))
+    .then(() => console.log('FIRST MIGRATE: UP (done)'));
 };
 
 exports.down = function (db) {
@@ -33,7 +33,7 @@ exports.down = function (db) {
 
   return db
     .removeColumn('Test', 'newAttribute')
-    .then(db.addColumn('Test', 'removeMe', { type: 'string ' }))
-    .then(db.renameColumn('Test', 'renamed', 'renameMe'))
-    .then(console.log('FIRST MIGRATE: DOWN (done)'));
+    .then(() => db.addColumn('Test', 'removeMe', { type: 'string ' }))
+    .then(() => db.renameColumn('Test', 'renamed', 'renameMe'))
+    .then(() => console.log('FIRST MIGRATE: DOWN (done)'));
 };
