@@ -19,6 +19,7 @@ import PrettyStream from 'bunyan-prettystream';
 import ottoman from 'ottoman';
 import moment from 'moment';
 import _ from 'lodash';
+import deasync from 'deasync';
 
 const prettyStdOut = new PrettyStream();
 prettyStdOut.pipe(process.stdout);
@@ -83,7 +84,19 @@ const CouchbaseDriver = Base.extend({
         store: this.migrationAdapter,
       });
 
+    let ready = false;
+
+    ottoman.ensureIndices(err => {
+      if (err) {
+        log.error('Failed to create ottoman indices', { err });
+      }
+
+      ready = true;
+    });
+
     this.models.MigrationRun = this.MigrationRun;
+
+    deasync.loopWhile(() => !ready);
   },
 
   _runN1ql: function (query, params, callback) {
@@ -483,7 +496,7 @@ Promise.promisifyAll(CouchbaseDriver);
  * @param callback  - The callback to call with a CouchbaseDriver object
  */
 const connect = (config, intern, callback) => {
-  internalLogger = intern.mod.log;
+  internalLogger = (intern.mod.log || log);
   type = intern.mod.type;
 
   log.info('Connect', { config, intern, type });

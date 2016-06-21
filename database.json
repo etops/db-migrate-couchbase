@@ -9,7 +9,7 @@
     "migrationBucket": "default"
   },
   "couchbase": {
-    "driver": {"ENV": "DRIVER"},
+    "driver": "couchbase",
     "database": "default",
     "bucket": "default",
     "migrationBucket": "default",
