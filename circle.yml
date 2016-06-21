@@ -33,7 +33,6 @@ test:
         # Verify docker container is running.
         - curl --retry 20 --retry-delay 10 -v http://localhost:8091/index.html -C -
         # Install driver into its own node_modules, so that db-migrate can see this plugin.
-        - gulp compile
         - sh install-yourself.sh
         - ls -l node_modules/db-migrate-couchbase/*
         - cat database.json

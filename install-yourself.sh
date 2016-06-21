@@ -1,4 +1,5 @@
 #!/bin/sh
+gulp compile
 TARGET=node_modules/db-migrate-couchbase
 mkdir /tmp/db-migrate-couchbase
 cp -r * /tmp/db-migrate-couchbase
