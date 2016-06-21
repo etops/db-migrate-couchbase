@@ -11,6 +11,7 @@ machine:
     environment:
         IMAGE_NAME: couchbase
         COUCHBASE_HOST: localhost
+        COUCHBASE_PORT: 8091
 
 general:
     build_dir: .
@@ -21,13 +22,13 @@ dependencies:
         - docker info
     override:
         - docker info
-        - docker build -t $IMAGE_NAME:$CIRCLE_BUILD_NUM .
+        - docker pull mdavidallen/couchbase:latest
 
 test:
     pre:
         - npm install
         - npm install -g gulp babel babel-cli
-        - docker run -d --name couchtest -p 8091:8091 -p 8092:8092 -p 8093:8093 -p 11210:11210 $IMAGE_NAME:$CIRCLE_BUILD_NUM
+        - docker run -d --name couchtest -p 8091:8091 -p 8092:8092 -p 8093:8093 -p 11210:11210 mdavidallen/couchbase:latest
         - sleep 10
         # Verify docker container is running.
         - curl --retry 20 --retry-delay 10 -v http://localhost:8091/index.html -C -
