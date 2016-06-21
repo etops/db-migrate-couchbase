@@ -28,6 +28,8 @@ prettyStdOut.pipe(process.stdout);
  */
 let type = null;
 
+const ottomanType = '_type';
+
 const log = bunyan.createLogger({
   name: 'db-migrate-couchbase',
   streams: [{
@@ -146,9 +148,15 @@ const CouchbaseDriver = Base.extend({
    */
   allLoadedMigrations: function (callback) {
     log.info('allLoadedMigrations');
-    this.MigrationRun.find({},
-      { sort: ['run_on', 'name'] },
-      (err, models) => callback(err, models));
+
+    return new Promise((resolve, reject) => {
+      this.MigrationRun.find({},
+        { sort: ['run_on', 'name'] },
+        (err, models) => {
+          if (err) { return reject(err); }
+          return resolve(models);
+        });
+    }).nodeify(callback);
   },
 
   /**
@@ -289,8 +297,8 @@ const CouchbaseDriver = Base.extend({
     // TODO -- ensure no naming clash with newTableName.
     const n1ql = `
       UPDATE ${this.active._name}
-      SET _type='${newOttomanModelName}'
-      WHERE _type='${ottomanModelName}'`;
+      SET \`${ottomanType}\`='${newOttomanModelName}'
+      WHERE \`${ottomanType}\`='${ottomanModelName}'`;
 
     return this._runN1ql(n1ql, {}, callback);
   },
@@ -309,7 +317,7 @@ const CouchbaseDriver = Base.extend({
     const q = `
       UPDATE \`${this.active._name}\`
       SET \`${modelPath}\` = null
-      WHERE \`_type\` = '${ottomanModelName}'`;
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     return this._runN1ql(q, {}, callback);
   },
@@ -324,7 +332,7 @@ const CouchbaseDriver = Base.extend({
     const q = `
       UPDATE \`${this.active._name}\`
       UNSET \`${modelPath}\`
-      WHERE \`_type\` = '${ottomanModelName}'`;
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     return this._runN1ql(q, {}, callback);
   },
@@ -340,7 +348,7 @@ const CouchbaseDriver = Base.extend({
       UPDATE \`${this.active._name}\`
       SET \`${newModelPath}\` = \`${oldModelPath}\`
       UNSET \`${oldModelPath}\`
-      WHERE \`_type\` = '${ottomanModelName}'`;
+      WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     return this._runN1ql(q, {}, callback);
   },
@@ -366,9 +374,12 @@ const CouchbaseDriver = Base.extend({
       run_on: moment().utc(),
     });
 
-    return i.save(err => {
-      callback(err);
-    });
+    return new Promise((resolve, reject) => {
+      return i.save(err => {
+        if (err) { return reject(err); }
+        return resolve(true);
+      });
+    }).nodeify(callback);
   },
 
   /**
@@ -484,12 +495,32 @@ const connect = (config, intern, callback) => {
     port = config.port;
   }
 
+  /* Export functions to the interface that are not normally part
+   * of the migration interface.
+   */
+  const exportable = [
+    'runN1ql', 'registerModel', 'getModel', 'createOttomanModel',
+    'renameOttomanModel', 'addOttomanPath', 'removeOttomanPath',
+    'renameOttomanPath', 'createBucket', 'dropBucket',
+    'withBucket', 'getBucketNames', 'getIndexes',
+  ];
+
+  exportable.forEach(f => {
+    /* eslint no-param-reassign: "off" */
+    intern.interfaces.MigratorInterface[f] = function () {
+      return new Promise((resolve, reject) => {
+        return reject('Not implemented');
+      }).nodeify(arguments[arguments.length - 1]);
+    };
+    return f;
+  });
+
   let cluster = null;
 
   if (config.host === undefined) {
-    cluster = `${DEFAULTS.host}:${port}`;
+    cluster = `${DEFAULTS.host}:${port}?detailed_errcodes=1`;
   } else {
-    cluster = `${config.host}:${port}`;
+    cluster = `${config.host}:${port}?detailed_errcodes=1`;
   }
 
   log.info('Connecting to cluster', { cluster });

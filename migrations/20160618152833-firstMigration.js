@@ -19,7 +19,6 @@ exports.setup = function (options, seedLink) {
 
 exports.up = function (db) {
   console.log('FIRST MIGRATE: UP');
-  console.log(JSON.stringify(db));
 
   return db
     .addColumn('Test', 'newAttribute', { type: 'string' })
@@ -31,7 +30,6 @@ exports.up = function (db) {
 
 exports.down = function (db) {
   console.log('FIRST MIGRATE: DOWN');
-  console.log(JSON.stringify(db));
 
   return db
     .removeColumn('Test', 'newAttribute')
