@@ -59,7 +59,22 @@ const CouchbaseDriver = Base.extend({
       return singleton;
     }
 
-    log.info('init');
+    if (internals.argv['sql-file']) {
+      throw new Error('This driver does not support the --sql-file option.');
+    }
+
+    if (internals.migrationTable !== 'migrations') {
+      log.warn('Driver ignores migration table option; it uses ottoman model MigrationRun');
+      internals.migrationTable = 'migrations';
+    }
+
+    if (internals.seedTable !== 'seeds') {
+      log.warn('Driver ignores seed table option; it uses ottoman model MigrationSeed');
+      internals.seedTable = 'seeds';
+    }
+
+    log.debug('init');
+    // console.log(internals);
     this._super(internals);
     this.connection = connection;
     this.user = config.user;
@@ -91,6 +106,16 @@ const CouchbaseDriver = Base.extend({
       {
         id: 'oid',
         // store: this.migrationAdapter,
+      });
+
+    this.MigrationSeed = ottoman.model('MigrationSeed', {
+      oid: { type: 'string', auto: 'uuid', readonly: true },
+      name: { type: 'string' },
+      run_on: { type: 'Date' },
+      ifNotExists: { type: 'boolean', default: true },
+    },
+      {
+        id: 'oid',
       });
 
     this.ready = false;
@@ -126,7 +151,7 @@ const CouchbaseDriver = Base.extend({
     }
 
     if (singleton.internals.dryRun) {
-      log.info('runN1ql dry run', { query, params });
+      log.info('DRY RUN', { query, params });
       return Promise.resolve(true).nodeify(callback);
     }
 
@@ -293,6 +318,10 @@ const CouchbaseDriver = Base.extend({
   createTable: function (ottomanModelName, schema, callback) {
     if (ottomanModelName === 'migration') {
       return Promise.resolve(singleton.MigrationRun).nodeify(callback);
+    }
+
+    if (ottomanModelName === 'seeds') {
+      return Promise.resolve(singleton.MigrationSeed).nodeify(callback);
     }
 
     log.info('create table / ottoman model', { ottomanModelName, schema });
