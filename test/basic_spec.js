@@ -205,41 +205,60 @@ describe('db-migrate-couchbase', function () {
         .catch(err => done(err));
     });
 
-    it('should add and remove an ottoman path', done => {
-      let m = null;
+    const FooMaticSchema = {
+      name: 'string',
+      foo: 'boolean',
+      subDoc: {
+        x: 'string',
+      },
+    };
+    const FooMaticInstance = {
+      name: 'John',
+      foo: true,
+      subDoc: {
+        x: 'Hi',
+      },
+    };
 
-      driver.createTable('FooMatic', {
-        name: 'string',
-        foo: 'boolean',
-      })
-        .then(model => {
-          m = model;
+    const scenarios = [
+      { name: 'simple path', attr: 'likesPie', modelName: 'FooMatic' },
+      { name: 'compound path', attr: 'subDoc.somethingElse', modelName: 'FooMatic2' },
+    ];
 
-          const inst = new m({ name: 'John', foo: 'true' });
+    scenarios.forEach(scenario => {
+      it(`should add and remove an ottoman ${scenario.name}`, done => {
+        let m = null;
 
-          return new Promise((resolve, reject) => {
-            return inst.save(err => {
-              if (err) { return reject(err); }
-              return resolve(inst);
-            });
+        driver.createTable(scenario.modelName, FooMaticSchema)
+          .then(model => {
+            m = model;
+
+            const inst = new m(FooMaticInstance);
+
+            return new Promise((resolve, reject) => {
+              return inst.save(err => {
+                if (err) { return reject(err); }
+                return resolve(inst);
+              });
+            })
           })
-        })
-        .then(() => driver.addOttomanPath('FooMatic', 'likesPie'))
-        .then(() => driver.runN1ql(`SELECT count(*) as x FROM \`${driver.activeBucketName()}\`
-                                    WHERE _type='FooMatic' and likesPie IS NOT MISSING`))
-        .then(results => {
-          console.log(JSON.stringify(results));
-          expect(results.rows[0].x).to.be.above(0);
-          return driver.removeOttomanPath('FooMatic', 'likesPie');
-        })
-        .then(() => driver.runN1ql(`SELECT count(*) as x FROM \`${config.migrationBucket}\`
-                                    WHERE _type='FooMatic' and likesPie IS NOT MISSING`))
-        .then(results => {
-          console.log(JSON.stringify(results));
-          expect(results.rows[0].x).to.equal(0);
-          done();
-        })
-        .catch(err => done(err));
+          .then(() => driver.addOttomanPath(scenario.modelName, scenario.attr))
+          .then(() => driver.runN1ql(`SELECT count(*) as x FROM \`${driver.activeBucketName()}\`
+                                    WHERE _type='${scenario.modelName}' and ${scenario.attr} IS NOT MISSING`))
+          .then(results => {
+            console.log(JSON.stringify(results));
+            expect(results.rows[0].x).to.be.above(0);
+            return driver.removeOttomanPath(scenario.modelName, scenario.attr);
+          })
+          .then(() => driver.runN1ql(`SELECT count(*) as x FROM \`${config.migrationBucket}\`
+                                    WHERE _type='${scenario.modelName}' and ${scenario.attr} IS NOT MISSING`))
+          .then(results => {
+            console.log(JSON.stringify(results));
+            expect(results.rows[0].x).to.equal(0);
+            done();
+          })
+          .catch(err => done(err));
+      });
     });
 
     it('should rename an ottoman path', done => {

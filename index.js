@@ -50,6 +50,12 @@ const DEFAULTS = {
   password: 'admin001*',
 };
 
+// Escape n1ql identifiers so they are syntactically valid even if they
+// contain reserved words.  So foo.bar becomes `foo`.`bar`
+const n1qlEscape = (param) => {
+  return param.split('.').map(p => `\`${p}\``).join('.');
+};
+
 let singleton = null;
 
 const CouchbaseDriver = Base.extend({
@@ -59,16 +65,16 @@ const CouchbaseDriver = Base.extend({
       return singleton;
     }
 
-    if (internals.argv['sql-file']) {
+    if (internals && internals.argv && internals.argv['sql-file']) {
       throw new Error('This driver does not support the --sql-file option.');
     }
 
-    if (internals.migrationTable !== 'migrations') {
+    if (internals && internals.migrationTable !== 'migrations') {
       log.warn('Driver ignores migration table option; it uses ottoman model MigrationRun');
       internals.migrationTable = 'migrations';
     }
 
-    if (internals.seedTable !== 'seeds') {
+    if (internals && internals.seedTable !== 'seeds') {
       log.warn('Driver ignores seed table option; it uses ottoman model MigrationSeed');
       internals.seedTable = 'seeds';
     }
@@ -371,13 +377,21 @@ const CouchbaseDriver = Base.extend({
   addColumn: function (ottomanModelName, modelPath, pathSpec, callback) {
     log.info('addColumn', { ottomanModelName, modelPath, pathSpec });
 
+    if (!ottomanModelName) {
+      return Promise.reject('missing ottoman model name').nodeify(callback);
+    }
+
+    if (!modelPath) {
+      return Promise.reject('missing model path').nodeify(callback);
+    }
+
     // TODO -- default value of null won't work for all ottoman types, like
     // Mixed, ref, etc.   But it will work for almost all primitive types.
     // const ottomanType = this.mapDataType(pathSpec);
 
     const q = `
       UPDATE \`${singleton.active._name}\`
-      SET \`${modelPath}\` = null
+      SET ${n1qlEscape(modelPath)} = null
       WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     return singleton.runN1ql(q, {}, callback);
@@ -392,7 +406,7 @@ const CouchbaseDriver = Base.extend({
 
     const q = `
       UPDATE \`${singleton.active._name}\`
-      UNSET \`${modelPath}\`
+      UNSET ${n1qlEscape(modelPath)}
       WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     return singleton.runN1ql(q, {}, callback);
@@ -411,8 +425,8 @@ const CouchbaseDriver = Base.extend({
 
     const q = `
       UPDATE \`${singleton.active._name}\`
-      SET \`${newModelPath}\` = \`${oldModelPath}\`
-      UNSET \`${oldModelPath}\`
+      SET ${n1qlEscape(newModelPath)} = ${n1qlEscape(oldModelPath)}
+      UNSET ${n1qlEscape(oldModelPath)}
       WHERE \`${ottomanType}\` = '${ottomanModelName}'`;
 
     log.info('renameColumn', { q });
@@ -508,7 +522,7 @@ const CouchbaseDriver = Base.extend({
       srcCols = [columns];
     }
 
-    const cols = srcCols.map(c => `\`${c}\``).join(', ');
+    const cols = srcCols.map(c => n1qlEscape(c)).join(', ');
 
     const n1ql = `
       CREATE INDEX \`${indexName}\` ON \`${singleton.active._name}\` (
