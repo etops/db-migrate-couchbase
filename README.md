@@ -14,6 +14,17 @@ migration actions as would be performed in SQL.
 The focus of this driver is to enable N1QL data migrations in couchbase, with a particular focus on 
 facilitating migration of [Ottoman](https://github.com/couchbaselabs/node-ottoman) data models.
 
+## Local Development
+
+`gulp compile` is used to transpile es6 to javascript which is then run from the `dist` folder.
+
+Locally, `npmc link` is used to install a copy of db-migrate-couchbase into its own node_modules folder,
+so that you can run `db-migrate` and have it pick up the plugin.  This is accomplished with the comamnds
+`npm link .` and `npm link db-migrate-couchbase`.
+
+Because db-migrate will use the regular javascript and not the es6, in general you will need to run
+`gulp compile` before changes are picked up.
+
 ## Conventions
 
 The db-migrate package was really written for relational databases, but Couchbase isn't relational.
