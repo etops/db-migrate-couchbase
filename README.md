@@ -16,9 +16,12 @@ facilitating migration of [Ottoman](https://github.com/couchbaselabs/node-ottoma
 
 ## Local Development
 
+1. `npm install` 
+2. `npm install -g db-migrate`
+
 `gulp compile` is used to transpile es6 to javascript which is then run from the `dist` folder.
 
-Locally, `npmc link` is used to install a copy of db-migrate-couchbase into its own node_modules folder,
+Locally, `npm link` is used to install a copy of db-migrate-couchbase into its own node_modules folder,
 so that you can run `db-migrate` and have it pick up the plugin.  This is accomplished with the comamnds
 `npm link .` and `npm link db-migrate-couchbase`.
 
@@ -50,11 +53,6 @@ and require the use of Ottoman for many migrations.  Plenty of methods can be us
 uses Ottoman - and to perform certain operations (like changing columns/paths) it is assumed those
 operations are performed on ottoman model instances.
 
-## Return Types
-
-Like other db-migrate plugins, all functions in this plugin can be used either with callback syntax,
-or as promises.  
-
 ## Configuration
 
 To use this driver, create a `database.json` file with information similar to the following:
@@ -78,6 +76,80 @@ To use this driver, create a `database.json` file with information similar to th
 }
 ```
 
+## Example Migration
+
+New migrations can be created with the `db-migrate` tool, via `db-migrate new`.  This will create a 
+`migrations` folder and put your first migration into it, which you then have to customize.
+
+In the example below, we use the SQL style syntax that's more familiar for db-migrate.  In all cases
+with this driver, SQL is an alias for n1ql querying, and "columns" refer to ottoman paths.
+
+Like other db-migrate plugins, all functions in this plugin can be used either with callback syntax,
+or as promises.  So you can use them either way; this example however uses the promise style.
+
+```
+'use strict';
+
+var dbm;
+var type;
+var seed;
+
+/**
+  * We receive the dbmigrate dependency from dbmigrate initially.
+  * This enables us to not have to rely on NODE_PATH.
+  */
+exports.setup = function (options, seedLink) {
+  console.log('FIRST MIGRATION');
+  console.log(JSON.stringify(options));
+  console.log(JSON.stringify(seedLink));
+  dbm = options.dbmigrate;
+  type = dbm.dataType;
+  seed = seedLink;
+};
+
+exports.up = function (db) {
+  console.log('FIRST MIGRATE: UP');
+
+  return db
+    .addColumn('Test', 'newAttribute', { type: 'string' })
+    .then(() => db.runSql('UPDATE default SET newAttribute=\'FOO\' WHERE _type=\'Test\''))
+    .then(() => db.renameColumn('Test', 'renameMe', 'renamedColumn'))
+    .then(() => db.removeColumn('Test', 'removeMe'))
+    .then(() => console.log('FIRST MIGRATE: UP (done)'));
+};
+
+exports.down = function (db) {
+  console.log('FIRST MIGRATE: DOWN');
+
+  return db
+    .removeColumn('Test', 'newAttribute')
+    .then(() => db.addColumn('Test', 'removeMe', { type: 'string ' }))
+    .then(() => db.renameColumn('Test', 'renamed', 'renameMe'))
+    .then(() => console.log('FIRST MIGRATE: DOWN (done)'));
+};
+```
+
+## Additional Warnings / Gotchas
+
+### Keep Indexes in Mind
+
+When changing or removing a column/ottoman path, remember to keep indexes in mind.  It is possible to remove
+a path (which has the effect of `UNSET`ing the field in couchbase) and retain the index.  But that is probably
+not a useful thing to do, so you may want to pair usage of change/remove column with `removeIndex`.
+
+### Watch the size of your updates
+
+Some users of couchbase have reported that when updating extremely large data sets, couchbase can run out
+of memory and fail to update properly.  This migration driver generally tries to update things in one single
+query without "batching".  Make sure your server instance has enough memory to perform the updates you're 
+trying to accomplish in your migration.
+
+### No transactions
+
+As of Couchbase 4.5.0, transactions are not supported, so they're not supported by this driver either.
+This means that it is a general good practice to take a backup or database snapshot before performing a big
+database migration, in case things go wrong.
+
 ## Breaking Down Migrations
 
 There are a few use cases of migrations you'd want to run.  This is an attempt to enumerate them, and
@@ -99,6 +171,10 @@ want to.
 Supported.
 
 ### Remove a path from a model
+
+Supported.
+
+### Change a field type (i.e. from string to number)
 
 Supported.
 

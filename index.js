@@ -506,6 +506,62 @@ const CouchbaseDriver = Base.extend({
     })).nodeify(callback);
   },
 
+  changeType: function (ottomanModelName, ottomanPath, oldType, newType, callback) {
+    // For various conversions, store functions that perform the conversion on an
+    // identifier.  This gets spliced into n1ql.
+    // Strings rather than functions are error messages back to the user about why that
+    // conversion may not make sense.
+    const supported = {
+      Date: {
+        string: 'Dates and strings are already interchangable',
+        number: 'not supported',
+      },
+
+      boolean: {
+        string: (i) => `TOSTRING(${i})`,
+        number: 'Converting booleans to numbers doesn\'t really make sense',
+      },
+
+      string: {
+        Date: 'Dates and strings are already interchangeable',
+        boolean: (i) => `TOBOOLEAN(${i})`,
+        number: (i) => `TONUMBER(${i})`,
+      },
+
+      number: {
+        string: (i) => `TOSTRING(${i})`,
+        boolean: (i) => `TOBOOLEAN(${i})`,
+        Date: 'not supported',
+      },
+    };
+
+    log.info('changeType', { ottomanModelName, ottomanPath, oldType, newType });
+
+    // Error conditions to check, before we issue a query that could damage data.
+    if (!ottomanModelName || !ottomanPath || !oldType || !newType) {
+      return Promise.reject('Missing required argument').nodeify(callback);
+    } else if (oldType === newType) {
+      return Promise.reject('Cannot convert from one type to itself').nodeify(callback);
+    } else if (!supported[oldType]) {
+      return Promise.reject(`Conversion of type ${oldType} is not supported`);
+    } else if (!supported[oldType][newType]) {
+      return Promise.reject(`Type ${oldType} does not have a supported conversion to ${newType}`);
+    }
+
+    const conversion = supported[oldType][newType];
+    if (typeof conversion === 'string') {
+      return Promise.reject(`Can't convert ${oldType} to ${newType}: ${conversion}`)
+        .nodeify(callback);
+    }
+
+    const p = n1qlEscape(ottomanPath);
+    const query = `UPDATE \`${singleton.active._name}\`
+    SET ${p} = ${conversion(p)}
+    WHERE \`${ottomanType}\`='${ottomanModelName}'`;
+
+    return singleton.runN1ql(query);
+  },
+
   /**
    * Adds an index to a collection
    * @param ottomanModelName the name of the ottoman model
@@ -586,7 +642,7 @@ const CouchbaseDriver = Base.extend({
    * @param callback
    */
   getIndexes: function (callback) {
-    log.info('Getting indexes');
+    log.info('getIndexes');
     return singleton.runN1ql('SELECT * FROM system:indexes', {}, callback);
   },
 });
