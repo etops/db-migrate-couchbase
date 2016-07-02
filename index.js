@@ -231,6 +231,11 @@ const CouchbaseDriver = Base.extend({
    */
   deleteMigration: function (migrationName, callback) {
     log.info('deleteMigration', { migrationName });
+
+    if (singleton.internals.dryRun) {
+      return Promise.resolve(true).nodeify(callback);
+    }
+
     return new Promise((resolve, reject) => {
       singleton.MigrationRun.find({
         name: migrationName,
@@ -462,6 +467,10 @@ const CouchbaseDriver = Base.extend({
       run_on: moment().utc(),
     });
 
+    if (singleton.internals.dryRun) {
+      return Promise.resolve(true).nodeify(callback);
+    }
+
     return new Promise((resolve, reject) => i.save(err => {
       if (err) { return reject(err); }
       return resolve(true);
@@ -474,14 +483,15 @@ const CouchbaseDriver = Base.extend({
   createBucket: function (bucketName, options, callback) {
     log.info('createBucket', { bucketName });
 
-    return new Promise((resolve, reject) => {
-      return singleton.manager.createBucket(bucketName, (options || {}), err => {
-        if (err) { return reject(err); }
-        log.info('Created bucket', { bucketName, err });
-        singleton.active = singleton.connection.openBucket(bucketName);
-        return resolve(singleton.active);
-      });
-    }).nodeify(callback);
+    return new Promise((resolve, reject) =>
+      singleton.manager.createBucket(bucketName,
+        (options || {}),
+        err => {
+          if (err) { return reject(err); }
+          log.info('Created bucket', { bucketName, err });
+          singleton.active = singleton.connection.openBucket(bucketName);
+          return resolve(singleton.active);
+        })).nodeify(callback);
   },
 
   /**
@@ -492,6 +502,10 @@ const CouchbaseDriver = Base.extend({
    */
   dropBucket: function (bucketName, callback) {
     log.info('dropBucket', { bucketName });
+
+    if (singleton.internals.dryRun) {
+      return Promise.resolve(true).nodeify(callback);
+    }
 
     return new Promise((resolve, reject) => singleton.manager.removeBucket(bucketName, (err) => {
       if (err) { return reject(err); }
@@ -598,7 +612,8 @@ const CouchbaseDriver = Base.extend({
    */
   removeIndex: function (indexName, callback) {
     log.info('removeIndex', { indexName });
-    return singleton.runN1ql(`DROP INDEX \`${singleton.active._name}\`.\`${indexName}\``, {}, callback);
+    return singleton.runN1ql(`DROP INDEX \`${singleton.active._name}\`.\`${indexName}\``,
+      {}, callback);
   },
 
   /**

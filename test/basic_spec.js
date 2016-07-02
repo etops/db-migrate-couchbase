@@ -369,6 +369,8 @@ describe('db-migrate-couchbase', function () {
           .then(results => {
             let found = false;
 
+            console.log('Indexes: ' + results.rows.map(i => i.indexes.name).join(', '));
+
             for (var i = 0; i < results.rows.length; i++) {
               const z = results.rows[i];
               if (z.indexes.name === name) {
