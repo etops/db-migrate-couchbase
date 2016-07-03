@@ -50,3 +50,11 @@ test:
         - docker logs --tail=200 couchtest 2>&1 | tee $CIRCLE_ARTIFACTS/docker.log
     override:
         - gulp test
+
+deployment:
+    hub:
+        branch: dev
+        commands:
+           - echo "NPM publishing"
+           - echo -e "$NPM_USERNAME\n$NPM_PASSWORD\n$NPM_EMAIL" | npm login
+           -  npm run 2npm

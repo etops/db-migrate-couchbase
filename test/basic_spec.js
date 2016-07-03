@@ -368,7 +368,7 @@ describe('db-migrate-couchbase', function () {
         const indexExists = (name) => driver.getIndexes()
           .then(results => {
             let found = false;
-
+            console.log(JSON.stringify(results));
             console.log('Indexes: ' + results.rows.map(i => i.indexes.name).join(', '));
 
             for (var i = 0; i < results.rows.length; i++) {
