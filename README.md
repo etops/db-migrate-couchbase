@@ -124,7 +124,7 @@ exports.down = function (db) {
   return db
     .removeColumn('Test', 'newAttribute')
     .then(() => db.addColumn('Test', 'removeMe', { type: 'string ' }))
-    .then(() => db.renameColumn('Test', 'renamed', 'renameMe'))
+    .then(() => db.renameColumn('Test', 'renamedColumn', 'renameMe'))
     .then(() => console.log('FIRST MIGRATE: DOWN (done)'));
 };
 ```

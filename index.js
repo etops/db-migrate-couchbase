@@ -18,7 +18,6 @@ import bunyan from 'bunyan';
 import PrettyStream from 'bunyan-prettystream';
 const ottoman = require('ottoman');
 import moment from 'moment';
-import _ from 'lodash';
 import deasync from 'deasync';
 
 const prettyStdOut = new PrettyStream();
@@ -213,7 +212,7 @@ const CouchbaseDriver = Base.extend({
     return new Promise((resolve, reject) => {
       singleton.getModel('MigrationRun').find({},
         {
-          sort: ['run_on', 'name'],
+          sort: ['run_on DESC', 'name DESC'],
           consistency: ottoman.Consistency.GLOBAL,
         },
         (err, models) => {
