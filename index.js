@@ -18,7 +18,6 @@ import bunyan from 'bunyan';
 import PrettyStream from 'bunyan-prettystream';
 const ottoman = require('ottoman');
 import moment from 'moment';
-import _ from 'lodash';
 import deasync from 'deasync';
 
 const prettyStdOut = new PrettyStream();
