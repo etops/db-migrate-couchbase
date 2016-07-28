@@ -670,7 +670,8 @@ Promise.promisifyAll(CouchbaseDriver);
  * @param callback  - The callback to call with a CouchbaseDriver object
  */
 const connect = (config, intern, callback) => {
-  internalLogger = (intern.mod.log || log);
+  console.log('CONNECT');
+  internalLogger = intern.mod ? (intern.mod.log || log) : log;
   type = intern.mod.type;
 
   // log.info('Connect', { config, intern, type });
