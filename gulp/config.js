@@ -3,7 +3,7 @@ export default {
 
   scripts: {
     src: [
-      './index.js',
+      './index.js', './connection.js', './create-db-state-1.js',
     ],
 
     addSrc: [
