@@ -110,6 +110,48 @@ describe('db-migrate-couchbase', function () {
       });
     });
 
+    describe('Indexes', function () {
+      it('should add and remove an index', done => {
+        let m = null;
+
+        const indexExists = (name) => driver.getIndexes()
+          .then(results => {
+            let found = false;
+            console.log(JSON.stringify(results));
+            console.log('Indexes: ' + results.rows.map(i => i.indexes.name).join(', '));
+
+            for (var i = 0; i < results.rows.length; i++) {
+              const z = results.rows[i];
+              if (z.indexes.name === name) {
+                found = true;
+              }
+            }
+
+            return found;
+          });
+
+        driver.createTable('Test', {
+          name: 'string',
+          favoriteAnimal: 'string',
+        })
+          .then(model => {
+            m = model;
+            return driver.addIndex('Test', 'Test_favoriteAnimalsIdx', 'favoriteAnimal')
+          })
+          .then(() => indexExists('Test_favoriteAnimalsIdx'))
+          .then(exists => {
+            expect(exists).to.be.true;
+            return driver.removeIndex('Test_favoriteAnimalsIdx');
+          })
+          .then(() => indexExists('Test_favoriteAnimalsIdx'))
+          .then(exists => {
+            expect(exists).to.be.false;
+            done();
+          })
+          .catch(err => done(err));
+      });
+    });
+
     describe('Types', function () {
       let m = null;
 
@@ -355,48 +397,6 @@ describe('db-migrate-couchbase', function () {
                                     newName IS NOT MISSING`))
           .then(results => {
             expect(results.rows[0].x).to.be.above(0);
-            done();
-          })
-          .catch(err => done(err));
-      });
-    });
-
-    describe('Indexes', function () {
-      it('should add and remove an index', done => {
-        let m = null;
-
-        const indexExists = (name) => driver.getIndexes()
-          .then(results => {
-            let found = false;
-            console.log(JSON.stringify(results));
-            console.log('Indexes: ' + results.rows.map(i => i.indexes.name).join(', '));
-
-            for (var i = 0; i < results.rows.length; i++) {
-              const z = results.rows[i];
-              if (z.indexes.name === name) {
-                found = true;
-              }
-            }
-
-            return found;
-          });
-
-        driver.createTable('Test', {
-          name: 'string',
-          favoriteAnimal: 'string',
-        })
-          .then(model => {
-            m = model;
-            return driver.addIndex('Test', 'Test_favoriteAnimalsIdx', 'favoriteAnimal')
-          })
-          .then(() => indexExists('Test_favoriteAnimalsIdx'))
-          .then(exists => {
-            expect(exists).to.be.true;
-            return driver.removeIndex('Test_favoriteAnimalsIdx');
-          })
-          .then(() => indexExists('Test_favoriteAnimalsIdx'))
-          .then(exists => {
-            expect(exists).to.be.false;
             done();
           })
           .catch(err => done(err));
