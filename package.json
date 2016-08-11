@@ -1,6 +1,6 @@
 {
   "name": "db-migrate-couchbase",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "db-migrate plugin for couchbase",
   "main": "./dist/index.js",
   "scripts": {
@@ -23,7 +23,7 @@
     "deasync": "^0.1.7",
     "lodash": "^4.13.1",
     "moment": "^2.13.0",
-    "ottoman": "https://github.com/couchbaselabs/node-ottoman.git",
+    "ottoman": "^1.0.4",
     "publish": "^0.6.0",
     "randomstring": "^1.1.5",
     "uuid": "^2.0.2"
