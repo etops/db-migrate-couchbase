@@ -51,9 +51,7 @@ const DEFAULTS = {
 
 // Escape n1ql identifiers so they are syntactically valid even if they
 // contain reserved words.  So foo.bar becomes `foo`.`bar`
-const n1qlEscape = (param) => {
-  return param.split('.').map(p => `\`${p}\``).join('.');
-};
+const n1qlEscape = (param) => param.split('.').map(p => `\`${p}\``).join('.');
 
 let singleton = null;
 
