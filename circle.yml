@@ -32,7 +32,6 @@ test:
         - docker run -d --name couchtest -p 8091:8091 -p 8092:8092 -p 8093:8093 -p 11210:11210 mdavidallen/couchbase:latest
         - npm install
         - npm install -g gulp babel babel-cli
-        - npm install couchbase
         # db-migrate has had two different repos over time.  Circle's cache
         # gets confused so install straight from github latest.
         # If you do npm install -g db-migrate it gets the wrong one, and you get
