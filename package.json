@@ -1,6 +1,6 @@
 {
   "name": "db-migrate-couchbase",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "db-migrate plugin for couchbase",
   "main": "./dist/index.js",
   "scripts": {
