@@ -28,7 +28,7 @@
     "publish": "^0.6.0",
     "randomstring": "^1.1.5",
     "uuid": "^2.0.2",
-    "couchbase": "2.2.2"
+    "couchbase": "~2.2.2"
   },
   "devDependencies": {
     "babel": "^6.5.2",
