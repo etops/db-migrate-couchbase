@@ -11,8 +11,8 @@ machine:
         - npm set progress=false
     environment:
         IMAGE_NAME: couchbase
-        COUCHBASE_HOST: couchbase://localhost
-        COUCHBASE_PORT: 8091
+        COUCHBASE_PORT_8091_TCP_ADDR: couchbase://localhost
+        COUCHBASE_PORT_8091_TCP_PORT: 8091
 
 general:
     build_dir: .
@@ -65,7 +65,7 @@ test:
 
 deployment:
     hub:
-        branch: master
+        branch: dev
         commands:
            - echo "NPM publishing"
            - echo -e "$NPM_USERNAME\n$NPM_PASSWORD\n$NPM_EMAIL" | npm login
