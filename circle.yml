@@ -65,7 +65,7 @@ test:
 
 deployment:
     hub:
-        branch: master
+        branch: dev
         commands:
            - echo "NPM publishing"
            - echo -e "$NPM_USERNAME\n$NPM_PASSWORD\n$NPM_EMAIL" | npm login
