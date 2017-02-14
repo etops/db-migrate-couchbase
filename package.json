@@ -24,11 +24,12 @@
     "deasync": "^0.1.7",
     "lodash": "^4.13.1",
     "moment": "^2.13.0",
-    "ottoman": "git+https://github.com/couchbaselabs/node-ottoman.git",
     "publish": "^0.6.0",
     "randomstring": "^1.1.5",
-    "uuid": "^2.0.2",
-    "couchbase": "~2.3.0"
+    "uuid": "^2.0.2"
+  },
+  "optionalDependencies": {
+    "ottoman": "git+https://github.com/couchbaselabs/node-ottoman.git"
   },
   "devDependencies": {
     "babel": "^6.5.2",
