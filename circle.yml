@@ -11,7 +11,7 @@ machine:
         - npm set progress=false
     environment:
         IMAGE_NAME: couchbase
-        COUCHBASE_PORT_8091_TCP_ADDR: couchbase://localhost
+        COUCHBASE_PORT_8091_TCP_ADDR: localhost
         COUCHBASE_PORT_8091_TCP_PORT: 8091
 
 general:
@@ -29,6 +29,13 @@ dependencies:
 
 test:
     pre:
+        - |
+          if [ -z "$(npm info $(npm ls --depth=-1 2>/dev/null | head -1 | cut -f 1 -d " ") 2>/dev/null)" ] ; then
+            echo "version number is fine";
+          else
+            echo "Please update version number in package.json!"
+            exit 1;
+          fi
         - docker run -d --name couchtest -p 8091:8091 -p 8092:8092 -p 8093:8093 -p 11210:11210 mdavidallen/couchbase:latest
         - npm install
         - npm install -g gulp babel babel-cli
