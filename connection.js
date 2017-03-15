@@ -16,7 +16,10 @@ if (!config.couchbase || !config.couchbase.migrationBucket) {
 const host = `couchbase://${process.env.COUCHBASE_PORT_8091_TCP_ADDR}:${process.env.COUCHBASE_PORT_8091_TCP_PORT}?detailed_errcodes=1`;
 console.log(`Connecting to ${host}, opening bucket ${config.couchbase.migrationBucket}`);
 const cluster = new couchbase.Cluster(host);
-const bucket = cluster.openBucket(config.couchbase.migrationBucket);
+const bucketPassword = config.bucketPassword;
+const bucket = (bucketPassword ?
+  cluster.openBucket(config.couchbase.migrationBucket, bucketPassword) :
+  cluster.openBucket(config.couchbase.migrationBucket));
 
 export default {
   cluster, bucket,
