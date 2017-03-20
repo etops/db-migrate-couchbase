@@ -82,6 +82,7 @@ const CouchbaseDriver = Base.extend({
     this.connection = connection;
     this.user = config.user;
     this.password = config.password;
+    this.bucketPassword = config.bucketPassword;
     this.manager = connection.manager(this.user, this.password);
     this.models = {};
 
@@ -89,11 +90,15 @@ const CouchbaseDriver = Base.extend({
       throw new Error('Configuration must specify migrationBucket');
     }
 
-    this.migrationBucket = this.connection.openBucket(config.migrationBucket, (err) => {
+    const errCallback = err => {
       if (err) {
-        throw new Error(`Could not open migration bucket: ${err}`, err);
+        throw new Error(`Could not open migration bucket: ${err}`);
       }
-    });
+    };
+
+    this.migrationBucket = (this.bucketPassword ?
+      this.connection.openBucket(config.migrationBucket, this.bucketPassword, errCallback) :
+      this.connection.openBucket(config.migrationBucket, errCallback));
 
     this.active = this.migrationBucket;
     ottoman.bucket = this.migrationBucket;
@@ -633,7 +638,10 @@ const CouchbaseDriver = Base.extend({
       };
 
       log.info('Opening active bucket', { bucketName });
-      bucket = singleton.connection.openBucket(bucketName, onBucketOpen);
+
+      bucket = (singleton.bucketPassword ?
+        singleton.connection.openBucket(bucketName, singleton.bucketPassword, onBucketOpen) :
+        singleton.connection.openBucket(bucketName, onBucketOpen));
     });
   },
 
