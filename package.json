@@ -29,7 +29,7 @@
     "uuid": "^2.0.2"
   },
   "optionalDependencies": {
-    "ottoman": "git+https://github.com/couchbaselabs/node-ottoman.git",
+    "ottoman": "git+https://github.com/couchbaselabs/node-ottoman.git#9f9262ccb0286c3ddbc72ae478b0a84db6aa5964",
     "couchbase": "2.2.4"
   },
   "devDependencies": {
