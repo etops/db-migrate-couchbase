@@ -29,8 +29,8 @@
     "uuid": "^2.0.2"
   },
   "optionalDependencies": {
-    "ottoman": "git+https://github.com/couchbaselabs/node-ottoman.git#9f9262ccb0286c3ddbc72ae478b0a84db6aa5964",
-    "couchbase": "2.2.4"
+    "ottoman": "git+https://github.com/etops/node-ottoman.git#5b80b9312674e2c56a7cecb5b9f38725e56381b7",
+    "couchbase": "2.2.5"
   },
   "devDependencies": {
     "babel": "^6.5.2",
