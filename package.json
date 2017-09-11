@@ -32,7 +32,7 @@
   },
   "optionalDependencies": {
     "couchbase": "2.4.0",
-    "ottoman": "git+https://github.com/etops/node-ottoman.git#d092bc4b2c4165d7590f08314c6099bbeed882d8"
+    "ottoman": "git+https://github.com/etops/node-ottoman.git#10eecc5b3dec39b0fbc8d1194ee5f5a8ff8753f1"
   },
   "devDependencies": {
     "babel": "^6.5.2",
