@@ -31,7 +31,7 @@
     "uuid": "^2.0.2"
   },
   "optionalDependencies": {
-    "couchbase": "^2.4.0",
+    "couchbase": "2.4.0",
     "ottoman": "git+https://github.com/etops/node-ottoman.git#d092bc4b2c4165d7590f08314c6099bbeed882d8"
   },
   "devDependencies": {
